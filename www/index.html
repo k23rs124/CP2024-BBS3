@@ -29,7 +29,7 @@ function showMessage(message, type = 'success') {
     `);
     
     // 3秒後にメッセージを消す
-    setTimeout(() => {
+    setTimeout(function() {
         messageArea.empty();
     }, 3000);
 }
@@ -39,8 +39,8 @@ function updateCharacterCount(inputId, counterId, maxLength) {
     const input = $(`#${inputId}`);
     const counter = $(`#${counterId}`);
     
-    input.on('input', () => {
-        const length = input.val().length;
+    input.on('input', function() {
+        const length = this.value.length;
         counter.text(`${length}/${maxLength}`);
     
         if (length > maxLength) {
@@ -61,12 +61,7 @@ function validateInput(author, content) {
         showMessage('お名前は20文字以内で入力してください', 'error');
         return false;
     }
-    return validateContent(content);
-}
-
-// 投稿内容のバリデーション
-function validateContent(content) {
-    if (!content || !content.trim()) {
+    if (!content.trim()) {
         showMessage('投稿内容を入力してください', 'error');
         return false;
     }
@@ -91,17 +86,17 @@ function createPost(author, content) {
     };
 
     postsRef.push(postData)
-        .then(() => {
+        .then(function() {
             showMessage('投稿が完了しました！');
             $('#authorInput').val('');
             $('#contentInput').val('');
             updateCharacterCount('authorInput', 'authorCount', 20);
             updateCharacterCount('contentInput', 'contentCount', 1000);
         })
-        .catch((error) => {
+        .catch(function(error) {
             showMessage('投稿に失敗しました：' + error.message, 'error');
         })
-        .finally(() => {
+        .finally(function() {
             button.prop('disabled', false);
         });
 }
@@ -135,37 +130,11 @@ function createPostElement(post) {
         <div class="post" id="post-${post.id}">
             <div class="post-header">
                 <span class="post-author">${escapeHtml(post.author)}</span>
-                <div class="post-actions">
-                    <button class="btn-edit" onclick="startEdit('${post.id}')">
-                        編集
-                    </button>
-                    <button class="btn-delete" onclick="deletePost('${post.id}')">
-                        削除
-                    </button>
-                </div>
-            </div>
-            <div class="post-content">${escapeHtml(post.content)}</div>
-            <div class="edit-form">
-                <textarea class="form-control" id="edit-${post.id}"></textarea>
-                <div class="button-group">
-                    <button class="btn-primary" onclick="updatePost('${post.id}')">
-                        更新
-                    </button>
-                    <button class="btn-cancel" onclick="cancelEdit('${post.id}')">
-                        キャンセル
-                    </button>
-                </div>
-            </div>
-            <div class="post-footer">
                 <span class="post-time">
                     ${formatTimestamp(post.timestamp)}
                 </span>
-                ${post.updatedAt ? `
-                    <span class="post-updated">
-                        (編集済み: ${formatTimestamp(post.updatedAt)})
-                    </span>
-                ` : ''}
             </div>
+            <div class="post-content">${escapeHtml(post.content)}</div>
         </div>
     `;
 }
@@ -180,12 +149,12 @@ function renderPosts(posts) {
         return;
     }
 
-    posts.forEach((post) => {
+    posts.forEach(function(post) {
         postsDiv.append(createPostElement(post));
     });
 }
 
-// 投稿の読み込み
+// 投稿の読み込み：バグ入りなので要修正　（データの完全な取得に対するリスナーを設定する必要がある）
 function loadPosts() {
     const sortOrder = $('#sortOrder').val();
     $('#loadingSpinner').show();
@@ -197,9 +166,9 @@ function loadPosts() {
     }
 
     // リスナーを設定
-    postsListener = postsRef.on('value', (snapshot) => {
+    postsListener = postsRef.on('value', function(snapshot) {
         const posts = [];
-        snapshot.forEach((childSnapshot) => {
+        snapshot.forEach(function(childSnapshot) {
             posts.push({
                 id: childSnapshot.key,
                 ...childSnapshot.val()
@@ -208,84 +177,20 @@ function loadPosts() {
 
         // 並び順の適用
         if (sortOrder === 'newest') {
-            posts.sort((a, b) => b.timestamp - a.timestamp);
+            posts.sort(function(a, b) {return b.timestamp - a.timestamp});
         } else {
-            posts.sort((a, b) => a.timestamp - b.timestamp);
+            posts.sort(function(a, b) {return a.timestamp - b.timestamp});
         }
 
         renderPosts(posts);
         $('#loadingSpinner').hide();
-    }, (error) => {
+    }, function(error) {
         console.error('Data fetch error:', error);
         showMessage('データの読み込みに失敗しました', 'error');
         $('#loadingSpinner').hide();
     });
 }
 
-// 編集の開始
-function startEdit(postId) {
-    const postElement = $(`#post-${postId}`);
-    const content = postElement.find('.post-content').text();
-    postElement.find('textarea').val(content);
-    postElement.addClass('editing');
-}
-
-// 編集のキャンセル
-function cancelEdit(postId) {
-    const postElement = $(`#post-${postId}`);
-    postElement.removeClass('editing');
-    postElement.find('textarea').val('');
-}
-
-// 投稿の更新：バグ入りなので要修正（更新せずに削除してしまう）
-function updatePost(postId) {
-    const contentVal = $(`#edit-${postId}`).val();
-    if (!validateContent(contentVal)) return;
-
-    // content の内容を変更し、updatedAt フィールドを付加して、更新後の投稿内容を生成
-    const updates = {
-        content: contentVal,
-        updatedAt: firebase.database.ServerValue.TIMESTAMP
-    };
-
-    postsRef.child(postId).remove()
-        .then(() => {
-            showMessage('投稿を更新しました');
-            $(`#post-${postId}`).removeClass('editing');
-            animateUpdate(postId);
-        })
-        .catch((error) => {
-            showMessage('更新に失敗しました：' + error.message, 'error');
-        });
-}
-
-// 投稿の削除：バグ入りなので要修正（削除せずに本文を「削除されました」にして更新してしまう）
-function deletePost(postId) {
-    if (!confirm('この投稿を削除してもよろしいですか？')) {
-        return;
-    }
-
-    const postElement = $(`#post-${postId}`);
-    postElement.addClass('deleting');
-
-    postsRef.child(postId).update({content: '削除されました'})
-        .then(() => {
-            showMessage('投稿を削除しました');
-        })
-        .catch((error) => {
-            showMessage('削除に失敗しました：' + error.message, 'error');
-            postElement.removeClass('deleting');
-        });
-}
-
-// 更新時のアニメーション
-function animateUpdate(postId) {
-    const post = $(`#post-${postId}`);
-    post.addClass('updated');
-    setTimeout(() => {
-        post.removeClass('updated');
-    }, 1000);
-}
 
 $(function() {
     // Firebaseの初期化
@@ -302,6 +207,13 @@ $(function() {
     updateCharacterCount('authorInput', 'authorCount', 20);
     updateCharacterCount('contentInput', 'contentCount', 1000);
 
+     // イベントリスナーの設定
+    $('#authorInput, #contentInput').on('input', function() {
+        const id = $(this).attr('id');
+        const maxLength = id === 'authorInput' ? 20 : 1000;
+        updateCharacterCount(id, id + 'Count', maxLength);
+    });
+
     // 投稿処理
     $('#postButton').on('click', function() {
         // 投稿内容をフォームから取得
@@ -314,16 +226,9 @@ $(function() {
     $('#sortOrder').on('change', loadPosts);
 
     // 投稿一覧の初期読み込み
-    loadPosts();
+    loadPosts();　　
 });
 
-// クリーンアップ処理
-window.addEventListener('unload', function() {
-    if (postsListener) {
-        postsRef.off('value', postsListener);
-        postsListener = null;
-    }
-});
     </script>
 </head>
 <body>
